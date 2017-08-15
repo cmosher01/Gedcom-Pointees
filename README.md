@@ -1,4 +1,4 @@
-# Gedcom-Select
+# Gedcom-Pointees
 
 Given a GEDCOM file and a list of INDI IDs, output two lists of IDs:
 
