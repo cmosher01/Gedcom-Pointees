@@ -1,70 +1,55 @@
 package nu.mine.mosher.gedcom;
 
+import joptsimple.OptionParser;
 import nu.mine.mosher.collection.TreeNode;
 import nu.mine.mosher.gedcom.exception.InvalidLevel;
 
 import java.io.*;
-import java.nio.charset.Charset;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /**
  * Created by Christopher Alan Mosher on 2017-08-10
  */
-public class GedcomPointees {
-    private static final Logger log = Logger.getLogger("");
-
-    private final File fileGedcom;
-    private final File fileIndis;
-    private final File filePointees;
-    private final File fileFringes;
+public class GedcomPointees implements Gedcom.Processor {
+    private final GedcomPointeesOptions options;
 
     private final Set<String> input = new HashSet<>();
     private final Set<String> pointee = new HashSet<>();
     private final Set<String> fringe = new HashSet<>();
     private final Set<String> seen = new HashSet<>();
 
-    private GedcomTree gt;
-
-    private GedcomPointees(final String filenameGedcom, final String filenameIndis, final String filenamePointees, final String filenameFringes) {
-        this.fileGedcom = new File(filenameGedcom);
-        this.fileIndis = new File(filenameIndis);
-        this.filePointees = new File(filenamePointees);
-        this.fileFringes = new File(filenameFringes);
-    }
-
     public static void main(final String... args) throws InvalidLevel, IOException {
-        if (args.length != 4) {
-            throw new IllegalArgumentException("usage: java -jar gedcom-pointees.jar in.ged in.ids out.ids fringe.ids");
-        } else {
-            new GedcomPointees(args[0], args[1], args[2], args[3]).main();
+        final GedcomPointeesOptions options = new GedcomPointeesOptions(new OptionParser());
+        options.parse(args);
+        new Gedcom(options, new GedcomPointees(options)).main();
+    }
+
+    private GedcomPointees(final GedcomPointeesOptions options) {
+        this.options = options;
+    }
+
+    @Override
+    public boolean process(final GedcomTree tree) {
+        try {
+            this.options.fileFringes(); // hack to check 3 file args given
+
+            readSet(this.options.fileIndis(), this.input);
+
+            pointees(tree);
+
+            writeSet(this.pointee, this.options.filePointees());
+            writeSet(this.fringe, this.options.fileFringes());
+        } catch (final Throwable e) {
+            throw new IllegalStateException(e);
         }
+        return false;
     }
 
-    private void main() throws IOException, InvalidLevel {
-        readValues();
-
-        loadGedcom();
-
-        pointees();
-
-        writeSet(this.pointee, this.filePointees);
-        writeSet(this.fringe, this.fileFringes);
-
-        System.err.flush();
-        System.out.flush();
-    }
-
-    private void loadGedcom() throws IOException, InvalidLevel {
-        final Charset charset = Gedcom.getCharset(this.fileGedcom);
-        this.gt = Gedcom.parseFile(fileGedcom, charset, false);
-    }
-
-    private void readValues() throws IOException {
-        final BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(this.fileIndis), "UTF-8"));
+    private static void readSet(final File file, final Set<String> set) throws IOException {
+        final BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
         for (String s = in.readLine(); s != null; s = in.readLine()) {
-            this.input.add(s);
+            set.add(s);
         }
         in.close();
     }
@@ -79,27 +64,39 @@ public class GedcomPointees {
         out.close();
     }
 
-    private void pointees() throws IOException {
+
+    private void pointees(final GedcomTree tree) throws IOException {
         for (final String in : this.input) {
             this.seen.add(in);
             this.pointee.add(in);
-            addPointees(this.gt.getNode(in));
+            final TreeNode<GedcomLine> node = tree.getNode(in);
+            if (node == null) {
+                System.err.println("Cannot find record with ID: "+in);
+            } else {
+                addPointees(node, tree);
+            }
         }
     }
 
-    private void addPointees(final TreeNode<GedcomLine> node) {
+    private void addPointees(final TreeNode<GedcomLine> node, final GedcomTree tree) {
+
         for (final TreeNode<GedcomLine> c : node) {
-            addPointees(c);
+            addPointees(c, tree);
         }
 
         final GedcomLine line = node.getObject();
         if (line.isPointer()) {
-            addHelper(line.getPointer());
+            addHelper(line.getPointer(), tree);
         }
     }
 
-    private void addHelper(final String id) {
-        final TreeNode<GedcomLine> pointee = this.gt.getNode(id);
+    private void addHelper(final String id, final GedcomTree tree) {
+        final TreeNode<GedcomLine> pointee = tree.getNode(id);
+        if (pointee == null) {
+            System.err.println("Cannot find record with ID: "+id);
+            return;
+        }
+
         final GedcomLine pln = pointee.getObject();
         final String pid = pln.getID();
         if (pln.getTag().equals(GedcomTag.INDI)) {
@@ -110,7 +107,7 @@ public class GedcomPointees {
         } else {
             this.seen.add(pid);
             this.pointee.add(pid);
-            addPointees(pointee);
+            addPointees(pointee, tree);
         }
     }
 }
