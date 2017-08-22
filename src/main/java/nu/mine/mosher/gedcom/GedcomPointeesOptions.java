@@ -1,41 +1,44 @@
 package nu.mine.mosher.gedcom;
 
-import joptsimple.OptionParser;
-import joptsimple.OptionSpec;
-
 import java.io.File;
-import java.util.List;
+import java.io.IOException;
 
 public class GedcomPointeesOptions extends GedcomOptions {
-    private final OptionSpec<File> files;
+    public File in;
+    public File out;
+    public File outFringe;
 
-    public GedcomPointeesOptions(final OptionParser parser) {
-        super(parser);
-        this.files = parser.nonOptions("indis.id.in pointees.id.out fringes.id.out").ofType(File.class).describedAs("FILES");
+    @Override
+    public void help() {
+        this.help = true;
+        System.err.println("Usage: java -jar gedcom-pointees-all.jar [OPTION]... INDIS.ids.in POINTEES.ids.out [FRINGES.ids.out] <in.ged");
+        System.err.println("Finds all IDs referenced from given INDI IDs.");
+        System.err.println("Optionally find INDIs not in the original set (at the fringes).");
+        System.err.println("Options:");
+        super.options();
     }
 
-    private List<File> files() {
-        return this.files.values(get());
-    }
-
-    public File fileIndis() {
-        if (files().size() <= 0) {
-            throw new IllegalArgumentException("Missing indis.id.in file.");
+    public void __(final String file) throws IOException {
+        if (this.in == null) {
+            this.in = new File(file);
+            if (!this.in.canRead()) {
+                throw new IllegalArgumentException("Cannot reads input file: "+this.in.getCanonicalPath());
+            }
+        } else if (this.out == null) {
+            this.out = new File(file);
+        } else if (this.outFringe == null) {
+            this.outFringe = new File(file);
         }
-        return files().get(0);
     }
 
-    public File filePointees() {
-        if (files().size() <= 1) {
-            throw new IllegalArgumentException("Missing pointees.id.out file.");
-        }
-        return files().get(1);
-    }
 
-    public File fileFringes() {
-        if (files().size() <= 2) {
-            throw new IllegalArgumentException("Missing fringes.id.out file.");
+    public GedcomPointeesOptions verify() {
+        if (this.help) {
+            return this;
         }
-        return files().get(2);
+        if (this.in == null) {
+            throw new IllegalArgumentException("Missing required input file.");
+        }
+        return this;
     }
 }

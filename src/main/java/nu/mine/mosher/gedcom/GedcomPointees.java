@@ -1,8 +1,8 @@
 package nu.mine.mosher.gedcom;
 
-import joptsimple.OptionParser;
 import nu.mine.mosher.collection.TreeNode;
 import nu.mine.mosher.gedcom.exception.InvalidLevel;
+import nu.mine.mosher.mopper.ArgParser;
 
 import java.io.*;
 import java.util.HashSet;
@@ -20,9 +20,10 @@ public class GedcomPointees implements Gedcom.Processor {
     private final Set<String> seen = new HashSet<>();
 
     public static void main(final String... args) throws InvalidLevel, IOException {
-        final GedcomPointeesOptions options = new GedcomPointeesOptions(new OptionParser());
-        options.parse(args);
+        final GedcomPointeesOptions options = new ArgParser<>(new GedcomPointeesOptions()).parse(args).verify();
         new Gedcom(options, new GedcomPointees(options)).main();
+        System.out.flush();
+        System.err.flush();
     }
 
     private GedcomPointees(final GedcomPointeesOptions options) {
@@ -32,14 +33,14 @@ public class GedcomPointees implements Gedcom.Processor {
     @Override
     public boolean process(final GedcomTree tree) {
         try {
-            this.options.fileFringes(); // hack to check 3 file args given
-
-            readSet(this.options.fileIndis(), this.input);
+            readSet(this.options.in, this.input);
 
             pointees(tree);
 
-            writeSet(this.pointee, this.options.filePointees());
-            writeSet(this.fringe, this.options.fileFringes());
+            writeSet(this.pointee, this.options.out, true);
+            if (this.options.outFringe != null) {
+                writeSet(this.fringe, this.options.outFringe, false);
+            }
         } catch (final Throwable e) {
             throw new IllegalStateException(e);
         }
@@ -54,14 +55,22 @@ public class GedcomPointees implements Gedcom.Processor {
         in.close();
     }
 
-    private static void writeSet(final Set<String> set, final File file) throws IOException {
-        final BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), "UTF-8"));
+    private static void writeSet(final Set<String> set, final File file, final boolean isStdOk) throws IOException {
+        final BufferedWriter out = new BufferedWriter(new OutputStreamWriter(getOutputStream(file, isStdOk), "UTF-8"));
         for (final String s : set) {
             out.write(s);
             out.newLine();
         }
         out.flush();
         out.close();
+    }
+
+
+    private static OutputStream getOutputStream(final File file, final boolean isStdOk) throws FileNotFoundException {
+        if (isStdOk && (file == null || file.getName().equals("-"))) {
+            return new FileOutputStream(FileDescriptor.out);
+        }
+        return new FileOutputStream(file);
     }
 
 
