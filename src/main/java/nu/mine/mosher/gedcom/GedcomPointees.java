@@ -5,14 +5,19 @@ import nu.mine.mosher.gedcom.exception.InvalidLevel;
 import nu.mine.mosher.mopper.ArgParser;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
+
+import static nu.mine.mosher.logging.Jul.log;
 
 /**
  * Created by Christopher Alan Mosher on 2017-08-10
  */
-public class GedcomPointees implements Gedcom.Processor {
+public class GedcomPointees {
     private final GedcomPointeesOptions options;
+
+    private GedcomTree tree;
 
     private final Set<String> input = new HashSet<>();
     private final Set<String> pointee = new HashSet<>();
@@ -20,8 +25,8 @@ public class GedcomPointees implements Gedcom.Processor {
     private final Set<String> seen = new HashSet<>();
 
     public static void main(final String... args) throws InvalidLevel, IOException {
-        final GedcomPointeesOptions options = new ArgParser<>(new GedcomPointeesOptions()).parse(args).verify();
-        new Gedcom(options, new GedcomPointees(options)).main();
+        log();
+        new GedcomPointees(new ArgParser<>(new GedcomPointeesOptions()).parse(args).verify()).main();
         System.out.flush();
         System.err.flush();
     }
@@ -30,33 +35,36 @@ public class GedcomPointees implements Gedcom.Processor {
         this.options = options;
     }
 
-    @Override
-    public boolean process(final GedcomTree tree) {
-        try {
-            readSet(this.options.in, this.input);
-
-            pointees(tree);
-
-            writeSet(this.pointee, this.options.out, true);
-            if (this.options.outFringe != null) {
-                writeSet(this.fringe, this.options.outFringe, false);
-            }
-        } catch (final Throwable e) {
-            throw new IllegalStateException(e);
+    private void main() throws IOException, InvalidLevel {
+        if (this.options.help) {
+            return;
         }
-        return false;
+        readGedcom();
+        readInput();
+        pointees();
+        writeOutput();
     }
 
-    private static void readSet(final File file, final Set<String> set) throws IOException {
-        final BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
-        for (String s = in.readLine(); s != null; s = in.readLine()) {
-            set.add(s);
-        }
-        in.close();
+    private void readGedcom() throws IOException, InvalidLevel {
+        tree = Gedcom.readFile(new BufferedInputStream(new FileInputStream(this.options.gedcom)));
+        new GedcomConcatenator(tree).concatenate();
     }
 
-    private static void writeSet(final Set<String> set, final File file, final boolean isStdOk) throws IOException {
-        final BufferedWriter out = new BufferedWriter(new OutputStreamWriter(getOutputStream(file, isStdOk), "UTF-8"));
+    private void readInput() throws IOException {
+        new BufferedReader(new InputStreamReader(new FileInputStream(FileDescriptor.in), StandardCharsets.UTF_8))
+            .lines()
+            .forEach(this.input::add);
+    }
+
+    private void writeOutput() throws IOException {
+        writeSet(this.pointee, null);
+        if (this.options.fringe != null) {
+            writeSet(this.fringe, this.options.fringe);
+        }
+    }
+
+    private static void writeSet(final Set<String> set, final File file) throws IOException {
+        final BufferedWriter out = new BufferedWriter(new OutputStreamWriter(getOutputStream(file), StandardCharsets.UTF_8));
         for (final String s : set) {
             out.write(s);
             out.newLine();
@@ -65,44 +73,41 @@ public class GedcomPointees implements Gedcom.Processor {
         out.close();
     }
 
-
-    private static OutputStream getOutputStream(final File file, final boolean isStdOk) throws FileNotFoundException {
-        if (isStdOk && (file == null || file.getName().equals("-"))) {
+    private static OutputStream getOutputStream(final File file) throws FileNotFoundException {
+        if (file == null) {
             return new FileOutputStream(FileDescriptor.out);
         }
         return new FileOutputStream(file);
     }
 
 
-    private void pointees(final GedcomTree tree) throws IOException {
-        for (final String in : this.input) {
-            this.seen.add(in);
-            this.pointee.add(in);
-            final TreeNode<GedcomLine> node = tree.getNode(in);
+
+    private void pointees() throws IOException {
+        for (final String id : this.input) {
+            this.seen.add(id);
+            this.pointee.add(id);
+            final TreeNode<GedcomLine> node = this.tree.getNode(id);
             if (node == null) {
-                System.err.println("Cannot find record with ID: "+in);
+                log().warning("Cannot find record with ID: " + id);
             } else {
-                addPointees(node, tree);
+                addPointees(node);
             }
         }
     }
 
-    private void addPointees(final TreeNode<GedcomLine> node, final GedcomTree tree) {
-
-        for (final TreeNode<GedcomLine> c : node) {
-            addPointees(c, tree);
-        }
+    private void addPointees(final TreeNode<GedcomLine> node) {
+        node.forEach(this::addPointees);
 
         final GedcomLine line = node.getObject();
         if (line.isPointer()) {
-            addHelper(line.getPointer(), tree);
+            addHelper(line.getPointer());
         }
     }
 
-    private void addHelper(final String id, final GedcomTree tree) {
-        final TreeNode<GedcomLine> pointee = tree.getNode(id);
+    private void addHelper(final String id) {
+        final TreeNode<GedcomLine> pointee = this.tree.getNode(id);
         if (pointee == null) {
-            System.err.println("Cannot find record with ID: "+id);
+            log().warning("Cannot find record with ID: " + id);
             return;
         }
 
@@ -116,7 +121,7 @@ public class GedcomPointees implements Gedcom.Processor {
         } else {
             this.seen.add(pid);
             this.pointee.add(pid);
-            addPointees(pointee, tree);
+            addPointees(pointee);
         }
     }
 }
