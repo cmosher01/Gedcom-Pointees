@@ -51,9 +51,7 @@ public class GedcomPointees {
     }
 
     private void readInput() throws IOException {
-        new BufferedReader(new InputStreamReader(new FileInputStream(FileDescriptor.in), StandardCharsets.UTF_8))
-            .lines()
-            .forEach(this.input::add);
+        new BufferedReader(new InputStreamReader(new FileInputStream(FileDescriptor.in), StandardCharsets.UTF_8)).lines().forEach(this.input::add);
     }
 
     private void writeOutput() throws IOException {
